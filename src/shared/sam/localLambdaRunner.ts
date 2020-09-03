@@ -26,7 +26,8 @@ import { SamCliBuildInvocation, SamCliBuildInvocationArguments } from './cli/sam
 import { SamCliLocalInvokeInvocation, SamCliLocalInvokeInvocationArguments } from './cli/samCliLocalInvoke'
 import { SamLaunchRequestArgs } from './debugger/awsSamDebugger'
 import { asEnvironmentVariables } from '../../credentials/credentialsUtilities'
-import { DefaultSamCliProcessInvoker } from './cli/samCliInvoker'
+import { buildSamCliStartApiArguments } from './cli/samCliStartApi'
+import { DefaultSamCliProcessInvoker, DefaultSamCliProcessInvokerContext } from './cli/samCliInvoker'
 
 // TODO: remove this and all related code.
 export interface LambdaLocalInvokeParams {
@@ -94,7 +95,7 @@ export async function makeInputTemplate(config: SamLaunchRequestArgs): Promise<s
 
     // use existing template to create a temporary template with a resource that has an overridden handler name.
     // this is necessary for Python, which overrides the handler name due to the debug file.
-    if (config.invokeTarget.target === 'template') {
+    if (['api', 'template'].includes(config.invokeTarget.target)) {
         const template = getTemplate(config.workspaceFolder, config)
         const templateResource = getTemplateResource(config.workspaceFolder, config)
 
@@ -189,8 +190,8 @@ export async function invokeLambdaFunction(
         environmentVariables: envVars,
         useContainer: config.sam?.containerBuild || false,
         extraArgs: config.sam?.buildArguments,
-        parameterOverrides: config.parameterOverrides,
         skipPullImage: config.sam?.skipNewImageCheck,
+        parameterOverrides: config.parameterOverrides,
     }
     if (!config.noDebug) {
         // Needed at least for dotnet case; harmless for others.
@@ -221,45 +222,101 @@ export async function invokeLambdaFunction(
     getLogger().debug(`localLambdaRunner.invokeLambdaFunction: ${config.name}`)
 
     const maxRetries: number = getAttachDebuggerMaxRetryLimit(ctx.settings, MAX_DEBUGGER_RETRIES_DEFAULT)
-
-    const localInvokeArgs: SamCliLocalInvokeInvocationArguments = {
-        templateResourceName: makeResourceName(config),
-        templatePath: config.templatePath,
-        eventPath: config.eventPayloadFile,
-        environmentVariablePath: config.envFile,
-        environmentVariables: envVars,
-        invoker: config.samLocalInvokeCommand!,
-        dockerNetwork: config.sam?.dockerNetwork,
-        debugPort: !config.noDebug ? config.debugPort?.toString() : undefined,
-        debuggerPath: config.debuggerPath,
-        extraArgs: config.sam?.localArguments,
-        parameterOverrides: config.parameterOverrides,
-        skipPullImage: config.sam?.skipNewImageCheck,
-    }
-
-    delete config.invokeTarget // Must not be used beyond this point.
-
-    const command = new SamCliLocalInvokeInvocation(localInvokeArgs)
-
     const timer = createInvokeTimer(ctx.settings)
+    const debugPort = !config.noDebug ? config.debugPort?.toString() : undefined
 
-    let invokeResult: Result = 'Failed'
-    try {
-        await command.execute(timer)
-        invokeResult = 'Succeeded'
-    } catch (err) {
-        ctx.chanLogger.error('AWS.error.during.sam.local', 'Failed to run SAM Application locally: {0}', err as Error)
-    } finally {
-        recordLambdaInvokeLocal({
-            result: invokeResult,
-            runtime: config.runtime as Runtime,
-            debug: !config.noDebug,
+    if (config.invokeTarget.target === 'api') {
+        // sam local start-api ...
+        const samCliContext = new DefaultSamCliProcessInvokerContext()
+        const samCommand = samCliContext.cliConfig.getSamCliLocation() ?? 'sam'
+        const samArgs = await buildSamCliStartApiArguments({
+            templatePath: config.templatePath,
+            dockerNetwork: config.sam?.dockerNetwork,
+            environmentVariablePath: config.envFile,
+            environmentVariables: envVars,
+            debugPort: debugPort,
+            debuggerPath: config.debuggerPath,
+            skipPullImage: config.sam?.skipNewImageCheck,
+            parameterOverrides: config.parameterOverrides,
+            extraArgs: config.sam?.localArguments,
         })
-        if (config.outFilePath) {
-            try {
-                await unlink(config.outFilePath)
-            } catch (err) {
-                getLogger().warn(err as Error)
+
+        let invokeResult: Result = 'Failed'
+        try {
+            await config.samLocalInvokeCommand!.invoke({
+                options: {
+                    env: {
+                        ...process.env,
+                        ...envVars,
+                    },
+                },
+                command: samCommand,
+                args: samArgs,
+                isDebug: !!debugPort,
+                timeout: timer,
+            })
+            invokeResult = 'Succeeded'
+        } catch (err) {
+            ctx.chanLogger.error(
+                'AWS.error.during.sam.local',
+                'Failed to run SAM Application locally: {0}',
+                err as Error
+            )
+        } finally {
+            recordLambdaInvokeLocal({
+                result: invokeResult,
+                runtime: config.runtime as Runtime,
+                debug: !config.noDebug,
+            })
+            if (config.outFilePath) {
+                try {
+                    await unlink(config.outFilePath)
+                } catch (err) {
+                    getLogger().warn(err as Error)
+                }
+            }
+        }
+    } else {
+        // 'target=code' or 'target=template'
+        const localInvokeArgs: SamCliLocalInvokeInvocationArguments = {
+            templateResourceName: makeResourceName(config),
+            templatePath: config.templatePath,
+            eventPath: config.eventPayloadFile,
+            environmentVariablePath: config.envFile,
+            environmentVariables: envVars,
+            invoker: config.samLocalInvokeCommand!,
+            dockerNetwork: config.sam?.dockerNetwork,
+            debugPort: debugPort,
+            debuggerPath: config.debuggerPath,
+            extraArgs: config.sam?.localArguments,
+            skipPullImage: config.sam?.skipNewImageCheck,
+            parameterOverrides: config.parameterOverrides,
+        }
+        delete config.invokeTarget // Must not be used beyond this point.
+        // sam local invoke ...
+        const command = new SamCliLocalInvokeInvocation(localInvokeArgs)
+        let invokeResult: Result = 'Failed'
+        try {
+            await command.execute(timer)
+            invokeResult = 'Succeeded'
+        } catch (err) {
+            ctx.chanLogger.error(
+                'AWS.error.during.sam.local',
+                'Failed to run SAM Application locally: {0}',
+                err as Error
+            )
+        } finally {
+            recordLambdaInvokeLocal({
+                result: invokeResult,
+                runtime: config.runtime as Runtime,
+                debug: !config.noDebug,
+            })
+            if (config.outFilePath) {
+                try {
+                    await unlink(config.outFilePath)
+                } catch (err) {
+                    getLogger().warn(err as Error)
+                }
             }
         }
     }
