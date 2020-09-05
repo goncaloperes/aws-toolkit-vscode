@@ -33,14 +33,6 @@ interface InvokeApiMessage extends Command {
     queryString: string
 }
 
-function isApiSelectedMessage(command: Command): command is ApiSelectedMessage {
-    return command.command === 'apiResourceSelected'
-}
-
-function isInvokeApiMessage(command: Command): command is InvokeApiMessage {
-    return command.command === 'invokeApi'
-}
-
 export async function invokeRemoteRestApi(params: { outputChannel: vscode.OutputChannel; apiNode: RestApiNode }) {
     const logger: Logger = getLogger()
     const apiNode = params.apiNode
@@ -132,17 +124,17 @@ export function createMessageReceivedFunc({
     let result: Result = 'Succeeded'
 
     return async (message: Command) => {
-        if (isApiSelectedMessage(message)) {
+        if (((c: Command): c is ApiSelectedMessage => c.command === 'apiResourceSelected')(message)) {
             const selectedResourceId = message.value
             if (!selectedResourceId) {
                 throw new Error(`Vue called 'apiResourceSelected', but no resourceId was provided!`)
             }
-            logger.info(`Selected ${selectedResourceId}`)
+            logger.debug(`Selected ${selectedResourceId}`)
             postMessage({
                 command: 'setMethods',
                 methods: listValidMethods(resources, selectedResourceId),
             })
-        } else if (isInvokeApiMessage(message)) {
+        } else if (((c: Command): c is InvokeApiMessage => c.command === 'invokeApi')(message)) {
             postMessage({ command: 'invokeApiStarted' })
 
             logger.info('Invoking API Gateway resource:')

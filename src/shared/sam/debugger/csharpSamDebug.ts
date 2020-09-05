@@ -18,7 +18,7 @@ import { mkdir } from '../../filesystem'
 import { DefaultSamLocalInvokeCommand, WAIT_FOR_DEBUGGER_MESSAGES } from '../cli/samCliLocalInvoke'
 import { getStartPort } from '../../utilities/debuggerUtils'
 import { ChannelLogger, getChannelLogger } from '../../utilities/vsCodeUtils'
-import { invokeLambdaFunction, makeInputTemplate, waitForDebugPort } from '../localLambdaRunner'
+import { invokeLambdaFunction, makeInputTemplate, waitForPort } from '../localLambdaRunner'
 import { SamLaunchRequestArgs } from './awsSamDebugger'
 import { ChildProcess } from '../../utilities/childProcess'
 import { HttpResourceFetcher } from '../../resourcefetcher/httpResourceFetcher'
@@ -67,7 +67,7 @@ export async function invokeCsharpLambda(ctx: ExtContext, config: SamLaunchReque
         WAIT_FOR_DEBUGGER_MESSAGES.DOTNET,
     ])
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    config.onWillAttachDebugger = waitForDebugPort
+    config.onWillAttachDebugger = waitForPort
     return await invokeLambdaFunction(ctx, config, async () => {
         if (!config.noDebug) {
             await _installDebugger({

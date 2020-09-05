@@ -19,6 +19,8 @@ export interface SamCliStartApiArguments {
      * Environment variables set when invoking the SAM process (NOT passed to the Lambda).
      */
     environmentVariables?: NodeJS.ProcessEnv
+    /** Local API webserver port. */
+    port?: string
     /**
      * When specified, starts the Lambda function container in debug mode and exposes this port on the local host.
      */
@@ -63,6 +65,7 @@ export async function buildSamCliStartApiArguments(args: SamCliStartApiArguments
         args.environmentVariablePath,
     ]
 
+    pushIf(invokeArgs, !!args.port, '--port', args.port!)
     pushIf(invokeArgs, !!args.debugPort, '--debug-port', args.debugPort!)
     pushIf(invokeArgs, !!args.dockerNetwork, '--docker-network', args.dockerNetwork!)
     pushIf(invokeArgs, !!args.skipPullImage, '--skip-pull-image')
