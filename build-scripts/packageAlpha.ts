@@ -18,15 +18,18 @@ import * as child_process from 'child_process'
 import * as fs from 'fs-extra'
 
 const packageJsonFile = './package.json'
-// Create a backup so that we can restore the original later.
-fs.copyFileSync(packageJsonFile, `${packageJsonFile}.bk`)
 
-const packageJson = JSON.parse(fs.readFileSync('./package.json', { encoding: 'UTF-8' }).toString())
-packageJson.version = '1.99.0-SNAPSHOT'
+try {
+    // Create a backup so that we can restore the original later.
+    fs.copyFileSync(packageJsonFile, `${packageJsonFile}.bk`)
 
-fs.writeFileSync(packageJsonFile, JSON.stringify(packageJson, undefined, '  '))
+    const packageJson = JSON.parse(fs.readFileSync('./package.json', { encoding: 'UTF-8' }).toString())
+    packageJson.version = '1.99.0-SNAPSHOT'
 
-child_process.execSync(`vsce package`)
+    fs.writeFileSync(packageJsonFile, JSON.stringify(packageJson, undefined, '    '))
 
-// Restore the original package.json.
-fs.copyFileSync(`${packageJsonFile}.bk`, packageJsonFile)
+    child_process.execSync(`vsce package`)
+} finally {
+    // Restore the original package.json.
+    fs.copyFileSync(`${packageJsonFile}.bk`, packageJsonFile)
+}
