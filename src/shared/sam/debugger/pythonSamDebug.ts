@@ -148,6 +148,7 @@ export async function waitForPythonDebugAdapter(debugPort: number, timeout: Time
         } catch (err) {
             logger.verbose('Error while testing: %O', err as Error)
         } finally {
+            // don't disconnect because the session will end if the debugger hasn't attached yet
             // await tester.disconnect()
         }
 

@@ -51,6 +51,7 @@ export class PythonDebugAdapterHeartbeat {
             }, DEBUG_ADAPTER_RESPONSE_TIMEOUT_MILLIS)
 
             this.socket.on('data', data => {
+                // debug adapter always sends a telemetry event
                 clearTimeout(timeout)
                 this.logger.verbose('Data received from Debug Adapter: %s', data.toString())
                 resolve(true)
@@ -62,20 +63,7 @@ export class PythonDebugAdapterHeartbeat {
                 resolve(false)
             })
 
-            // Send an initialization request, serving as a no-op.
-            // Initialization does not start the debugging process and is only allowed once per session, however
-            // the actual python debugger is considered a separate session
-            // See Base protocol: https://microsoft.github.io/debug-adapter-protocol/overview
-            const json = JSON.stringify({
-                seq: 1,
-                type: 'request',
-                command: 'initialize',
-                arguments: {
-                    adapterID: 'aws-toolkit-heartbeat',
-                },
-            })
-            const writeResult = this.socket.write(`Content-Length: ${json.length}\r\n\r\n${json}`)
-            this.logger.verbose(`Data written to Debug Adapter, write result: ${writeResult}`)
+            // don't write initialziation the socket because it messes up the debug session
         })
     }
 
